@@ -1,0 +1,317 @@
+---
+title: "Analyzing Literacy, Marriage, and Family Size in 1979 Portugal"
+author: "Karen Riani"
+date: "February 14, 2025"
+output: pdf_document
+geometry: margin=0.5in
+urlcolor: blue
+---
+  
+## Introduction
+
+Fertility rates worldwide are shaped by multiple demographic factors, notably marriage, age, and literacy. Later marriage shortens the reproductive window and increases contraceptive use, while higher literacy and education, especially among women, are linked to delayed childbirth and smaller families (Testa, 2023; Kumar et al., 2017). These relationships may vary across economic conditions, rural-urban differences, and policy shifts. 
+
+Portugal can be a compelling case for studying these factors. The Carnation Revolution of 1974 led to sweeping education and marriage reforms, providing a setting to examine how literacy and marriage age influence family size. Before the revolution, Portugal had one of Western Europe’s highest illiteracy rates, exceeding 70% among adults (Gomes et al., 2015). Limited education access for women reinforced traditional gender roles and expectations for larger families. Post-revolution literacy campaigns aimed to increase educational access, particularly for women (Gomes et al., 2015). By European standards, Portugal was a poor country in 1980, further reinforcing societal expectations for larger family sizes. 
+
+Marriage patterns also shifted. Before the revolution, strict gender roles limited women’s autonomy, and divorce was heavily restricted, reinforcing expectations of full-time motherhood and larger families (Home Bound, 2015). After 1974, reforms expanded legal independence, raised the marriage age, and granted divorce rights. However, rural areas were slower to adapt, meaning informal or underage marriages may have persisted.
+
+Previous research highlights critical relationships between education, marriage, and family size. Testa (2023) examined fertility and education across Europe, finding that higher education does not always lead to smaller families: more educated women often marry more and plan for larger families. Kumar et al. (2017) analyzed fertility in Indian districts and found that female married illiteracy was the strongest predictor of higher fertility, explaining 53% of the variance in total fertility rates (TFR). Chandel & Verma (2023) found that female literacy and internet use were negatively associated with fertility, while early marriage increased fertility, collectively explaining 28% of TFR variation. These findings suggest a need to examine whether Portugal’s literacy and marriage reforms affected family size.
+
+This study analyzes how literacy and marriage age influenced family size in Portugal from 1979-1980. Generalized Linear Models (GLMs), Poisson, and Negative Binomial (NB) models are used to test whether increased literacy and later marriage reduced family size.  These GLMs are considered as they allow us to estimate the effects of many factors on the response while making adjustments for specific issues-- namely overdispersion. Results indicate that women who marry at younger ages tend to have larger families. Those who marry at 0-15 years have 71% more children compared to the reference group, while those marrying at 30+ have 56% fewer children. Additionally, illiterate women have 37% more children on average than literate women. Future research should explore additional socioeconomic factors over a grander timescale, as this study is limited by the available data and does not account for regional differences, access to contraception, or economic conditions, which may also impact family size.
+
+
+```{r libraries, include=FALSE}
+# install.packages("broom.mixed")
+library(ggplot2)
+library(MASS)
+library(gridExtra)
+library(grid)
+library(broom.mixed)
+library(broom)
+library(jtools)
+library(glmmTMB)
+```
+
+
+```{r dataDownload, include=FALSE}
+pUrl = 'http://wfs.dhsprogram.com/pt/ptsr01.dat'
+pName = file.path(tempdir(), 'portugal.dat')
+if(!file.exists(pName)) {
+  download.file(pUrl, pName)
+}
+
+datNames = rbind(
+  age=c(45,2),
+  ageMarried=c(149,2), 
+  monthsSinceM = c(157,4),
+  #		failedPregnancies=c(421,2),
+  #		failedPregStill=c(423,2),
+  #		failedPregSpAb=c(425,2),
+  pregnancies=c(433,2),
+  children=c(435,2),
+  sons=c(443,2),
+  #		firstBirthInterval = c(479,2),
+  region = c(641,2),
+  literacy = c(649,2)
+)
+colnames(datNames ) = c('start','len')
+datNames = cbind(startm1=datNames[,1]-1,datNames, sum=apply(datNames, 1,sum))
+cbind(datNames[-1,1] , datNames[seq(1, nrow(datNames)-1),4])
+datNames[-1,1] = datNames[-1,2] - datNames[seq(1, nrow(datNames)-1),4]
+dWidths = as.vector(t(datNames[,c(1,3)]))
+dNames = paste(rep(rownames(datNames), rep(2, nrow(datNames))),
+               rep(c( "junk",""), nrow(datNames)), sep="") 
+
+dNames = dNames[dWidths > 0]
+dWidths = dWidths[dWidths > 0]
+
+formats = list(
+  ageMarried = data.frame(code=1:7,  label=c(0,15,18,20,22,25,30)),
+  region = data.frame(code=1:5, 
+                      label=c('lisbon','porto','20k+', '10-20k', 'lt10k')),
+  literacy = data.frame(code=1:2, label=c('yes','no')),
+  firstBirthInterval = data.frame(
+    code = 1:8,
+    label = c(
+      'lt0','0-7', '8-11','12-23',
+      '24-35','36-47','48-59','60-Inf'
+    )
+  )
+)
+
+
+
+formats$ageMarried$label = 
+  paste(formats$ageMarried$label, 'to',
+        c(formats$ageMarried$label[-1], 'Inf'), sep='')
+formats$ageMarried = rbind(formats$ageMarried, data.frame(code=88, label='never'))
+
+
+portugal = read.fwf(
+  pName,
+  dWidths, col.names=dNames,
+  header=FALSE)
+
+portugal = portugal[,grep("junk$", names(portugal), invert=TRUE)]
+
+for(D in intersect(names(portugal), names(formats))){
+  portugal[[D]] = factor(portugal[[D]],
+                         levels=formats[[D]]$code, 
+                         labels=formats[[D]]$label)
+}
+portugal$ageMarried = relevel(portugal$ageMarried, '22to25')
+portugal$region = relevel(portugal$region, 'lt10k')
+
+if(TRUE) save(portugal, file='portugal.RData')
+```
+
+
+```{r thedata, echo=FALSE, results='hide'}
+head(portugal)
+table(portugal$region)
+
+summary(portugal) 
+
+table(portugal$region)
+table(portugal$literacy)
+table(portugal$ageMarried)
+
+```
+
+
+## Methods
+
+The analysis used NB regression to model family size because this approach accounts for overdispersion–where the variance exceeds the mean significantly. Both Poisson and NB regression were applied as overdispersion was anticipated.
+The data for this study comes from the Demographic and Health Surveys (DHS) Portugal dataset (DHS Program, 1980), which provides nationally representative information on marriage, literacy, and family size.
+
+The woman’s age at first marriage (ageMarried) and literacy status (literacy) were chosen as predictors of the total number of children per respondent (children) because prior research shows their strong influence on family size. Studies have found that female illiteracy was the strongest predictor of higher fertility, and early marriage significantly increased fertility (Kumar et al., 2017); Chandel & Verma, 2023). Age at marriage was categorized into groups (0-15, 15-18, 18-20, 20-22, 25-30, 30+), while literacy was treated as a binary variable (literate vs. illiterate). These variables were chosen based on their relevance to understanding variations in family size across different social and educational backgrounds. 
+
+Model significance was assessed using confidence intervals and standard errors, ensuring that the predictors were statistically meaningful. The inclusion of a dispersion parameter in the NB model allowed for a more accurate estimation of variation in family size across different demographic groups. Overdispersion was assessed by comparing the equality between predictor means and variances, as well as by calculating the proportion of variance explained by the predictors. No offset was applied in this analysis, but potential offsets could have included log(months since marriage + 1) to account for different reproductive exposure durations. However, the focus was on modeling family size as observed rather than standardizing based on reproductive time. Zero-inflation was not considered, as expert input confirmed that low birth rates made it unnecessary.  
+
+``` {r fig-age-marriage, fig.cap="Left: Histogram of women's age at marriage, showing most married between 18-25, with a peak in the 22-25 category. Right: Boxplot of family size by age at marriage, where earlier marriage is generally associated with larger families, though variation exists across all groups.",  echo=FALSE, results='hide', fig.align='center'}
+
+portugal$ageMarried <- factor(portugal$ageMarried, 
+  levels = c("0to15", "15to18", "18to20", "20to22", "22to25", "25to30", "30toInf"),
+  labels = c("0-15", "15-18", "18-20", "20-22", "22-25", "25-30", "30+"))
+
+bar_marriedAge <- ggplot(portugal, aes(x = ageMarried)) +
+  geom_bar(fill = "green", alpha = 0.7, color = "black") +
+  labs(title = "Distribution of Women's Age at Marriage", x = "Age at Marriage", y = "Count") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 11),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 10))
+
+box_marriedAge <- ggplot(portugal, aes(x = ageMarried, y = children)) +
+  geom_boxplot(fill = "red", alpha = 0.7) +
+  labs(title = "Family Size by Age at Marriage", x = "Age at Marriage", y = "Number of Children") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 11),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 10))
+
+grid.arrange(bar_marriedAge, box_marriedAge, ncol = 2)
+
+```
+
+
+```{r fig-literacy, fig.cap="Left: Distribution of literacy, showing the proportion of literate and illiterate women. Right: Family size by literacy, where literate women tend to have smaller families, while illiterate women exhibit greater variation and more frequent large families.", echo=FALSE, results='hide', fig.align='center'}
+
+
+boxplot_literacy <- ggplot(portugal, aes(x = literacy, y = children)) +
+  geom_boxplot(fill = "orange", alpha = 0.7) +
+  labs(title = "Family Size by Literacy", x = "Literacy", y = "Number of Children") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 11))
+
+bar_literacy <- ggplot(portugal, aes(x = literacy)) +
+  geom_bar(fill = "orange", alpha = 0.7, color = "black") +
+  labs(title = "Distribution of Literacy", x = "Literacy Status", y = "Count") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 11))
+
+grid.arrange(bar_literacy, boxplot_literacy, ncol = 2)
+  
+```
+
+
+
+```{r family-size, fig.cap="Histogram of family size, showing a right-skewed distribution where most families have 1-3 children. Larger families (4+ children) become progressively rarer, suggesting a decline in family size.", echo=FALSE, results='hide', fig.align='center', results='hide'}
+
+hist_numChildren <- ggplot(portugal, aes(x = children)) +
+  geom_histogram(binwidth = 1, fill = "blue", alpha = 0.7, color = "black") +
+  labs(title = "Distribution of Family Size", x = "Number of Children", y = "Count") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 11))
+
+# hist_numChildren
+
+```
+
+## Results and Discussion
+Figure 1 shows the distribution of marriage age and its relationship with family size. Most women married between 18–25, peaking at 22–25 (~1,400 cases). Earlier marriage was linked to larger families, with women who married before 20 having a median of 2–5 children, while those marrying at 30+ had fewer children with minimal variation.  Figure 2 examines literacy and family size. Over 4,500 women were literate, compared to fewer than 600 illiterate women. Illiterate women had larger families, with a median of ~3 children, while literate women had a median closer to 2. The distribution for illiterate women was wider, with more cases exceeding 10 children.  
+
+Figure 3 presents Poisson and NB model results. Early marriage was strongly associated with larger family size, particularly for those married at 0–15 (rate ratio ~0.29) and 15–18 (~0.18). Later marriage reduced family size, with women married at 30+ having significantly fewer children (rate ratio ~-0.44). Illiterate women have a rate ratio of 0.63, confirming a significant positive association with larger families. The Negative Binomial model produced narrower confidence intervals than Poisson, suggesting it better accounted for overdispersion.  
+
+Table 1 presents the overdispersion check. Most predictor groups had similar means and variances, but some mid-20s marriage age groups and illiterate women showed variances double or triple the mean. The dispersion parameter estimate (Tau = 0.31) suggests low to moderate overdispersion, meaning Poisson could still be valid, but the Negative Binomial model better absorbs extra variance.  
+
+Table 2 presents the Negative Binomial model results, showing that early marriage and illiteracy are associated with larger family sizes. Women who married before age 15 had a rate ratio of 0.29, indicating significantly higher family sizes, with a decreasing effect for later marriage groups. Those who married at 30+ had a rate ratio of -0.44, meaning they had significantly fewer children. Illiteracy also had a strong effect, with a rate ratio of 0.63, confirming that illiterate women tend to have larger families. The standard deviation estimate of 0.31 supports the presence of moderate variability in family sizes.
+
+These results support that both marriage age and literacy significantly influence family size. Early marriage consistently predicts larger families, while literacy reduces family size, aligning with demographic transition theories linking education and delayed marriage to lower fertility.
+
+
+``` {r modelling, echo=FALSE, results='hide'}
+
+# Ensure proper levels
+portugal$ageMarried <- factor(portugal$ageMarried, 
+                              levels = c("0-15", "15-18", "18-20", "20-22", "22-25", "25-30", "30+"))
+portugal$ageMarried <- relevel(portugal$ageMarried, ref = "22-25")  
+
+portugal$literacy <- factor(portugal$literacy, levels = c("yes", "no"))
+portugal$literacy <- relevel(portugal$literacy, ref = "yes")  
+
+# Overdispersion Table
+means <- aggregate(portugal$children, by=list(portugal$ageMarried, portugal$literacy), mean)
+vars <- aggregate(portugal$children, by=list(portugal$ageMarried, portugal$literacy), var)
+
+
+# GLMs
+poisson_model <- glm(children ~ ageMarried + literacy, 
+                     data = portugal, 
+                     family = poisson)
+
+nb_model <- glmmTMB(children ~ ageMarried + literacy, 
+                     data = portugal, 
+                     family = nbinom2)
+```
+
+```{r fig-overdispersionfamily-size, echo=FALSE, fig.align='center'}
+# Combine means and variances
+overdispTable <- cbind(means, vars[,3])
+
+# Assign column names
+colnames(overdispTable) <- c("Age at Marriage", "Literacy", "Mean", "Variance")
+
+# Convert 'Age at Marriage' to factor with correct order
+age_levels <- c("0-15", "15-18", "18-20", "20-22", "22-25", "25-30", "30+")
+overdispTable <- overdispTable[order(factor(overdispTable$`Age at Marriage`, levels = age_levels)), ]
+
+# Display table
+knitr::kable(overdispTable, digits = 2, col.names = c("Age at Marriage", "Literacy", "Mean", "Variance"), 
+             caption = "Mean and variance of family size by age at marriage and literacy status. Higher variance in illiterate groups and younger marriage ages suggests greater unpredictability in family size, supporting the use of the Negative Binomial over Poisson Model")
+
+```
+
+```{r fig-NBoverdispersion, echo=FALSE, results='hide' }
+# Looking at overdispersion for NB
+
+res <- summary(nb_model)
+tau <- 1 / sqrt(confint(nb_model, parm = "sigma"))
+#print(tau)
+
+```
+
+
+
+```{r fig-table-results, echo=FALSE,}
+
+nb_summary <- summary(nb_model)$coef$cond[, 1:2]
+nb_ci <- confint(nb_model)[, c(3,1,2)] 
+
+nb_results_table <- rbind(nb_ci, sd = 1 / sqrt(confint(nb_model, parm = 'sigma')[, c(3,2,1)]))
+
+row.names(nb_results_table) <- c("(Intercept)", 
+                                 "Age Married: 0-15", 
+                                 "Age Married: 15-18", 
+                                 "Age Married: 18-20", 
+                                 "Age Married: 20-22", 
+                                 "Age Married: 25-30", 
+                                 "Age Married: 30+", 
+                                 "Literacy (No)", 
+                                 "Standard Deviation")
+
+knitr::kable(nb_results_table, digits = 2, 
+             col.names = c("Estimate", "2.5% CI", "97.5% CI"),
+             caption = "Negative Binomial Model Results: Rate ratios and confidence intervals. Lower marriage age is associated with increased fertility, while literacy has a small but significant effect on family size.")
+
+
+```
+
+```{r fig-comp, echo=FALSE, fig.cap= "Compares coefficient estimates and confidence intervals for Poisson and Negative Binomial models. Both models indicate that earlier marriage is associated with higher fertility, with the strongest effects for women who married before age 18. The estimates decrease as marriage age increases, with those marrying at 30+ showing a significant negative association with fertility. Literacy status also plays a role, as illiterate women tend to have larger families. The Negative Binomial model produces slightly narrower confidence intervals, suggesting it better accounts for overdispersion in the data.", fig.align='center'}
+# Model Comparison
+plot_summs(
+  poisson_model, 
+  nb_model, 
+  model.names = c("Poisson", "Negative Binomial"),
+  coefs = c(
+    "(Intercept)" = "(Intercept)",
+    "Marriage Age: 0-15" = "ageMarried0-15",
+    "Marriage Age: 15-18" = "ageMarried15-18",
+    "Marriage Age: 18-20" = "ageMarried18-20",
+    "Marriage Age: 20-22" = "ageMarried20-22",
+    "Marriage Age: 25-30" = "ageMarried25-30",
+    "Marriage Age: 30+" = "ageMarried30+",
+    "Illiterate" = "literacyno"
+  )
+)
+
+```
+
+
+## Conclusion
+The results support that early marriage and literacy status significantly impact family size, consistent with prior research. Women who married before age 15 had the highest fertility rates, while those who married at 30 or older had significantly fewer children. Literacy was also a major determinant, with illiterate women having larger families on average. The NB model provided better estimates due to minor overdispersion in the data.
+
+These findings align with Kumar et al. (2017), who identified female married illiteracy as the strongest predictor of fertility, explaining 53% of the variation in total fertility rates. Similarly, Chandel & Verma (2023) found that early marriage and illiteracy together explained 28% of fertility differences. Additionally, the study is similar to Testa (2015) in showing education shapes family size but contrasts in that Portugal’s post-revolution literacy gains likely contributed to fertility decline. The study’s results reinforce these patterns, demonstrating that educational and marital reforms in Portugal played a role in shaping family size trends. 
+
+This study highlights the importance of marriage timing and education in demographic transitions. Policies promoting greater access to education and delaying marriage could be effective strategies for managing fertility rates. Future research could incorporate other demographic factors like region for further urban-rural disparities and sons for gender-based fertility patterns and a comparison to other eras in Portugal’s history. 
+
+
+\newpage
+## References  
+Gomes, I., Amorim, J. P., Correia, J. A., & Menezes, I. (2015). *The Portuguese literacy campaigns after the Carnation Revolution (1974–1977)* [Manuscript]. Retrieved from https://www.researchgate.net/publication/277311330_The_Portuguese_Literacy_Campaigns_After_the_Carnation_Revolution_1974-1977  
+
+Testa, M. (2015). Fertility intentions and outcomes: Implementing the Theory of Planned Behavior with graphical models. *Advances in Life Course Research, 23*, 14–28. https://pmc.ncbi.nlm.nih.gov/articles/PMC4477715/  
+
+Chandel, N. P. S., & Verma, S. (2024). Female literacy, internet use, and marriage in predicting total fertility rate: An inter-state analysis. *Population Geography Journal, 45*(2), 35–46. https://apgin.org/wp-content/uploads/2024/02/Population-Geography_Journal_Vol-45_2.pdf#page=41  
+
+Kumar, R., Dogra, V., Rani, K., & Sahu, K. (2017). Female married illiteracy as the most important continual determinant of total fertility rate among districts of Empowered Action Group states of India. *Journal of Family Medicine and Primary Care, 6*(3), 513–516. https://journals.lww.com/jfmpc/fulltext/2017/06030/Female_married_illiteracy_as_the_most_important.12.aspx  
+
+DHS Program. (1980). *Demographic and Health Surveys (DHS) - Portugal.* https://wfs.dhsprogram.com/index.cfm?ccode=pt
