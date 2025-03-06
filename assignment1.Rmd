@@ -5,6 +5,7 @@ date: "February 14, 2025"
 output: pdf_document
 geometry: margin=0.5in
 urlcolor: blue
+bibliography: references.bib
 ---
   
 ## Introduction
@@ -305,13 +306,15 @@ This study highlights the importance of marriage timing and education in demogra
 
 
 \newpage
-## References  
+## References 
+Chandel, N. P. S., & Verma, S. (2024). Female literacy, internet use, and marriage in predicting total fertility rate: An inter-state analysis. *Population Geography Journal, 45*(2), 35–46. https://apgin.org/wp-content/uploads/2024/02/Population-Geography_Journal_Vol-45_2.pdf#page=41  
+
+DHS Program. (1980). *Demographic and Health Surveys (DHS) - Portugal.* https://wfs.dhsprogram.com/index.cfm?ccode=pt
+
 Gomes, I., Amorim, J. P., Correia, J. A., & Menezes, I. (2015). *The Portuguese literacy campaigns after the Carnation Revolution (1974–1977)* [Manuscript]. Retrieved from https://www.researchgate.net/publication/277311330_The_Portuguese_Literacy_Campaigns_After_the_Carnation_Revolution_1974-1977  
+
+Kumar, R., Dogra, V., Rani, K., & Sahu, K. (2017). Female married illiteracy as the most important continual determinant of total fertility rate among districts of Empowered Action Group states of India. *Journal of Family Medicine and Primary Care, 6*(3), 513–516. https://journals.lww.com/jfmpc/fulltext/2017/06030/Female_married_illiteracy_as_the_most_important.12.aspx
 
 Testa, M. (2015). Fertility intentions and outcomes: Implementing the Theory of Planned Behavior with graphical models. *Advances in Life Course Research, 23*, 14–28. https://pmc.ncbi.nlm.nih.gov/articles/PMC4477715/  
 
-Chandel, N. P. S., & Verma, S. (2024). Female literacy, internet use, and marriage in predicting total fertility rate: An inter-state analysis. *Population Geography Journal, 45*(2), 35–46. https://apgin.org/wp-content/uploads/2024/02/Population-Geography_Journal_Vol-45_2.pdf#page=41  
 
-Kumar, R., Dogra, V., Rani, K., & Sahu, K. (2017). Female married illiteracy as the most important continual determinant of total fertility rate among districts of Empowered Action Group states of India. *Journal of Family Medicine and Primary Care, 6*(3), 513–516. https://journals.lww.com/jfmpc/fulltext/2017/06030/Female_married_illiteracy_as_the_most_important.12.aspx  
-
-DHS Program. (1980). *Demographic and Health Surveys (DHS) - Portugal.* https://wfs.dhsprogram.com/index.cfm?ccode=pt
